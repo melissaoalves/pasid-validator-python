@@ -1,0 +1,40 @@
+source:
+  listen_host: localhost
+  listen_port: 4000
+  target_lb1_host: localhost
+  target_lb1_port: 5000
+  arrival_delay_ms: 200
+  max_messages_per_cycle: 5
+  qtd_services_variation: [1, 2]
+  config_target_lb_host: localhost
+  config_target_lb_port: 6000
+  source_name: MainSource
+  modelFeedingStage: false
+
+lb1:
+  host: localhost
+  port: 5000
+  max_queue_size: 10
+  initial_num_services: 2
+  lb_name: LoadBalancer1
+  service_config:
+    host: localhost
+    target_host: localhost
+    target_port: 6000    # para LB2
+    time_mean: 0.05
+    time_std_dev: 0.01
+    target_is_source: false
+
+lb2:
+  host: localhost
+  port: 6000
+  max_queue_size: 10
+  initial_num_services: 1
+  lb_name: LoadBalancer2
+  service_config:
+    host: localhost
+    target_host: localhost
+    target_port: 4000    # para Source
+    time_mean: 0.1
+    time_std_dev: 0.02
+    target_is_source: true
