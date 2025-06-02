@@ -3,18 +3,22 @@ import threading
 import time
 import statistics
 from src.utils.logger_setup import get_logger 
+import matplotlib.pyplot as plt
+from collections import defaultdict
+import itertools
 
 class Source:
     def __init__(self, listen_host, listen_port, target_lb1_host, target_lb1_port,
-                 arrival_delay_ms, max_messages_per_cycle,
-                 qtd_services_variation, config_target_lb_host, config_target_lb_port,
-                 source_name="Source"):
+             arrival_delay_ms, images_per_cycle_list,
+             qtd_services_variation, config_target_lb_host, config_target_lb_port,
+             source_name="Source"):
+
         self.listen_host = listen_host
         self.listen_port = listen_port
         self.target_lb1_host = target_lb1_host
         self.target_lb1_port = target_lb1_port
         self.arrival_delay_sec = arrival_delay_ms / 1000.0
-        self.max_messages_per_cycle = max_messages_per_cycle
+        self.images_per_cycle_list = [int(x) for x in images_per_cycle_list]
         self.qtd_services_variation = qtd_services_variation
         self.config_target_lb_host = config_target_lb_host
         self.config_target_lb_port = config_target_lb_port
@@ -35,6 +39,7 @@ class Source:
         self.lock = threading.Lock()
         self.all_cycles_completed_event = threading.Event()
         self.experiment_results = []
+
 
     def _send_config_message(self, num_services_to_configure):
         config_message = f"config;{num_services_to_configure};\n"
@@ -126,14 +131,16 @@ class Source:
         listener_thread.daemon = True
         listener_thread.start()
 
-        total_cycles = len(self.qtd_services_variation)
-        for cycle_idx, num_services in enumerate(self.qtd_services_variation):
-            self.logger.info(f"=== INICIANDO CICLO {cycle_idx + 1}/{total_cycles} com {num_services} serviço(s) ===")
+        combinations = list(itertools.product(self.qtd_services_variation, self.images_per_cycle_list))
+        total_cycles = len(combinations)
+
+        for cycle_idx, (num_services, total_images) in enumerate(combinations):
+            self.logger.info(f"=== INICIANDO CICLO {cycle_idx + 1}/{total_cycles} | Serviços: {num_services} | Imagens: {total_images} ===")
 
             if not self._send_config_message(num_services):
                 self.logger.error(f"Falha ao configurar LB para {num_services} serviços. Abortando ciclo.")
                 continue
-            
+
             self.logger.info("Aguardando LB reconfigurar (5 segundos)...")
             time.sleep(5)
 
@@ -142,15 +149,15 @@ class Source:
                 self.message_counter_current_cycle = 0
                 self.total_messages_received_current_cycle = 0
 
-            for _ in range(self.max_messages_per_cycle):
+            for _ in range(total_images):
                 with self.lock:
                     self.message_counter_current_cycle += 1
                 self._send_message_to_lb1(cycle_id=cycle_idx, message_id=self.message_counter_current_cycle)
                 time.sleep(self.arrival_delay_sec)
 
-            self.logger.info(f"Todas as {self.max_messages_per_cycle} mensagens do ciclo {cycle_idx+1} enviadas. Aguardando respostas...")
-            
-            cycle_timeout_seconds = 30
+            self.logger.info(f"Todas as {total_images} imagens do ciclo {cycle_idx+1} enviadas. Aguardando respostas...")
+
+            cycle_timeout_seconds = 60
             start_wait_time = time.time()
             while True:
                 with self.lock:
@@ -164,14 +171,16 @@ class Source:
 
             with self.lock:
                 mrt_ciclo, std_dev_ciclo = self._calculate_mrt_and_stddev(self.response_times_ms_current_cycle)
+                tempo_total_envio = total_images * self.arrival_delay_sec
+                arrival_rate = total_images / tempo_total_envio if tempo_total_envio > 0 else 0
                 self.logger.info(f"=== RESULTADOS CICLO {cycle_idx + 1} ({num_services} serviço(s)) ===")
-                self.logger.info(f"Mensagens Enviadas: {self.message_counter_current_cycle}")
-                self.logger.info(f"Mensagens Recebidas: {self.total_messages_received_current_cycle}")
-                self.logger.info(f"MRT: {mrt_ciclo:.3f} ms")
-                self.logger.info(f"Desvio Padrão: {std_dev_ciclo:.3f} ms")
+                self.logger.info(f"MRT: {mrt_ciclo:.3f} ms | SD: {std_dev_ciclo:.3f} ms | Arrival Rate: {arrival_rate:.2f} msg/s")
+
                 self.experiment_results.append({
                     'cycle_id': cycle_idx,
                     'qtd_services': num_services,
+                    'arrival_rate': arrival_rate,
+                    'num_images': total_images,
                     'mrt_ms': mrt_ciclo,
                     'std_dev_ms': std_dev_ciclo,
                     'raw_mrts_ms': list(self.response_times_ms_current_cycle)
@@ -179,7 +188,7 @@ class Source:
 
         self.all_cycles_completed_event.set()
         listener_thread.join(timeout=2)
-        
+
         try:
             self.server_socket.close()
             self.logger.info("Socket de escuta do Source fechado.")
@@ -188,7 +197,9 @@ class Source:
 
         self.logger.info("=== EXPERIMENTO COMPLETO ===")
         for result in self.experiment_results:
-            self.logger.info(f"Ciclo {result['cycle_id']+1} (Serviços: {result['qtd_services']}): MRT={result['mrt_ms']:.2f}ms, SD={result['std_dev_ms']:.2f}ms")
+            self.logger.info(
+                f"Ciclo {result['cycle_id']+1} (Serviços: {result['qtd_services']} | Imagens: {result['num_images']} | Rate: {result['arrival_rate']:.2f}): MRT={result['mrt_ms']:.2f}ms"
+            )
 
         self.print_final_times_like_java_feed()
 
@@ -235,24 +246,29 @@ class Source:
             else:
                 self.logger.info(f"{t_label} = N/A (sem dados válidos para este T ou mensagens incompletas)")
 
+    def gerar_grafico_mrt(self):
+        grouped = defaultdict(list)
+        for res in self.experiment_results: 
+            grouped[res['qtd_services']].append((res['num_images'], res['mrt_ms']))
+
+        plt.figure(figsize=(10, 6))
+        for qtd_services, values in grouped.items():
+            values.sort()
+            x = [v[0] for v in values]
+            y = [v[1] for v in values]
+            plt.plot(x, y, marker='o', label=f'{qtd_services} serviço(s)')
+
+        plt.xlabel("Quantidade de Imagens por Ciclo")
+        plt.ylabel("MRT (ms)")
+        plt.title("Tempo Médio de Resposta (MRT) por Quantidade de Imagens")
+        plt.legend(title="Qtd. Serviços")
+        plt.grid(True)
+        plt.tight_layout()
+        plt.savefig("entrega2.png")
+
+        
+
     def start(self):
         self.run_experiment_cycles()
-
-if __name__ == '__main__':
-    main_logger_source_test = get_logger("SourceTestMain")
-    main_logger_source_test.info("Iniciando teste individual do Source...")
-    
-    source_node = Source(
-        listen_host='localhost',
-        listen_port=4000,
-        target_lb1_host='localhost',
-        target_lb1_port=5000,
-        arrival_delay_ms=200,
-        max_messages_per_cycle=5,
-        qtd_services_variation=[1, 2],
-        config_target_lb_host='localhost',
-        config_target_lb_port=6000,
-        source_name="TestSource"
-    )
-    source_node.start()
-    main_logger_source_test.info("Teste individual do Source concluído.")
+        self.print_final_times_like_java_feed()
+        self.gerar_grafico_mrt()

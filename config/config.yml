@@ -3,18 +3,17 @@ source:
   listen_port: 4000
   target_lb1_host: localhost
   target_lb1_port: 5000
-  arrival_delay_ms: 200
-  max_messages_per_cycle: 5
+  arrival_delay_ms: 50
+  images_per_cycle_list: [10, 20, 40, 60, 80]
   qtd_services_variation: [1, 2]
   config_target_lb_host: localhost
   config_target_lb_port: 6000
   source_name: MainSource
   modelFeedingStage: false
-
 lb1:
   host: localhost
   port: 5000
-  max_queue_size: 10
+  max_queue_size: 100
   initial_num_services: 2
   lb_name: LoadBalancer1
   service_config:
@@ -28,7 +27,7 @@ lb1:
 lb2:
   host: localhost
   port: 6000
-  max_queue_size: 10
+  max_queue_size: 100
   initial_num_services: 1
   lb_name: LoadBalancer2
   service_config:
