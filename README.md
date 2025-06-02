@@ -69,14 +69,16 @@ pasid_validator_python/
 ## Pré-requisitos
 
 - Python 3.x (desenvolvido com Python 3.12, mas deve funcionar com versões recentes)
+- TensorFlow, NumPy, Pillow, PyYAML, matplotlib.
 
 ## Como Executar
 
 1.  Navegue até o diretório raiz do projeto (`pasid_validator_python/`).
-2.  Execute o script `main.py`:
+2.  Execute os containers Docker:
     ```bash
-    python main.py
+    docker-compose up --build
     ```
+    Certifique-se de que as portas 4000, 5000 e 6000 estejam disponíveis no host.
 3.  A saída da simulação (mensagens `INFO` e acima) será exibida no console.
 4.  Um arquivo de log detalhado (incluindo mensagens `DEBUG`) será criado na pasta `logs/` com o nome `experiment_YYYY-MM-DD_HH-MM-SS.log`. Este arquivo contém o rastreamento completo do fluxo de mensagens e dos tempos coletados.
 
@@ -96,7 +98,37 @@ O sistema coleta e calcula as seguintes métricas principais, que são logadas p
 - **Desvio Padrão do MRT**
 - **Tempos Intermediários ($T_1, T_2, T_3, T_4, T_5$)** para cada etapa do fluxo (do Source até os serviços do LB2)
 
-## Próximas Etapas (Entregas Futuras)
+## Entrega 02: IA e Docker
 
-- **Entrega 02 - Experimentos**: Uso de containers Docker, substituição da simulação por serviços reais com IA, geração de gráficos de desempenho.
+### Serviço Real com IA
+
+A Entrega 02 substitui o `sleep()` por um modelo **ResNet50** real da `tensorflow.keras.applications`, que processa imagens reais:
+
+- A imagem é carregada com PIL.
+- Pré-processada com `preprocess_input`.
+- Classificada por inferência do modelo.
+
+### Execução por Ciclos
+
+Para cada par de valores de:
+
+- `qtd_services_variation` (ex: [1, 2])
+- `images_per_cycle_list` (ex: [10, 20, 40, 60, 80])
+
+Um **ciclo** é executado e o MRT é calculado.
+
+### Gráfico Gerado
+
+![Gráfico MRT](mrt_por_num_imagens.png)
+
+- Eixo X: Quantidade de imagens por ciclo.
+- Eixo Y: Tempo Médio de Resposta (MRT) em ms.
+- Cada linha representa uma quantidade de serviços.
+
+**Interpretação**:
+- Com mais imagens, o tempo médio aumenta.
+- 2 serviços processam mais rápido que 1, validando a escalabilidade.
+- A IA é executada para cada imagem (mesmo que seja a mesma repetida).
+
+## Próxima Etapa
 - **Entrega 03 - Artigo**: Escrever um artigo científico detalhando o experimento, a ferramenta e os resultados.

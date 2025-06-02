@@ -1,0 +1,5 @@
+tensorflow==2.14.0
+Pillow
+numpy<2.0
+pyyaml
+matplotlib

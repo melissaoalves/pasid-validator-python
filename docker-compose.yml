@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  source:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["python", "main.py", "source"]
+    ports:
+      - "4000:4000"
+    depends_on:
+      - lb1
+      - lb2
+
+  lb1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["python", "main.py", "lb1"]
+    ports:
+      - "5000:5000"
+    depends_on:
+      - lb2
+
+  lb2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["python", "main.py", "lb2"]
+    ports:
+      - "6000:6000"
